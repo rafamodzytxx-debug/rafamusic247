@@ -62,6 +62,7 @@ class RafaMusicBot(commands.Bot):
         from cogs.welcomer import setup as setup_welcomer
         from cogs.tickets import setup as setup_tickets
         from cogs.rules import setup as setup_rules
+        from cogs.ai_chat import setup as setup_ai
 
         await setup_general(self)
         await setup_music(self, self.music_manager)
@@ -70,6 +71,7 @@ class RafaMusicBot(commands.Bot):
         await setup_welcomer(self)
         await setup_tickets(self)
         await setup_rules(self)
+        await setup_ai(self)
 
         # Registrar vistas interactivas persistentes ANTES de conectar
         from cogs.tickets import TicketPanelView, TicketControlView
