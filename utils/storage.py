@@ -65,6 +65,10 @@ class StorageManager:
         """Obtiene la información del canal 24/7 de un servidor."""
         return self._data.get("guilds_247", {}).get(str(guild_id))
 
+    def get_247(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Alias para get_247_info."""
+        return self.get_247_info(guild_id)
+
     def get_all_247(self) -> Dict[str, Dict[str, Any]]:
         """Devuelve todos los servidores con 24/7 activo."""
         return self._data.get("guilds_247", {})

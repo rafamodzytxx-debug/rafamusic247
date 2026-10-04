@@ -102,23 +102,44 @@ class TicketControlView(View):
 
     @button(label="Cerrar Ticket", style=discord.ButtonStyle.secondary, emoji="🔒", custom_id="btn_close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, btn: Button):
+        try:
+            await interaction.response.defer()
+        except Exception:
+            pass
+        channel = interaction.channel
         embed = discord.Embed(
             title="🔒 Ticket Cerrado",
-            description=f"El ticket ha sido cerrado por {interaction.user.mention}.\n"
-                        f"Puedes eliminar el canal con el botón rojo cuando termines.",
+            description=f"El ticket ha sido cerrado por {interaction.user.mention}.\n\n"
+                        f"🗑️ Haz clic en **Eliminar Ticket** para borrar este canal inmediatamente.",
             color=COLOR_ERROR
         )
         embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
-        await interaction.response.send_message(embed=embed)
+        await channel.send(embed=embed)
 
     @button(label="Eliminar Ticket", style=discord.ButtonStyle.danger, emoji="🗑️", custom_id="btn_delete_ticket")
     async def delete_ticket(self, interaction: discord.Interaction, btn: Button):
-        await interaction.response.send_message("⚠️ El canal será eliminado en **5 segundos**...")
-        await asyncio.sleep(5)
         try:
-            await interaction.channel.delete(reason=f"Ticket eliminado por {interaction.user.name}")
+            await interaction.response.defer()
+        except Exception:
+            pass
+
+        channel = interaction.channel
+        try:
+            await channel.delete(reason=f"Ticket eliminado por {interaction.user.name}")
+        except discord.Forbidden:
+            try:
+                await interaction.followup.send(
+                    "❌ No tengo permisos suficientes para eliminar este canal. Verifica que el rol del bot tenga permiso de **Gestionar Canales**.",
+                    ephemeral=True
+                )
+            except Exception:
+                pass
         except Exception as e:
             print(f"Error eliminando canal de ticket: {e}")
+            try:
+                await interaction.followup.send(f"❌ Error al eliminar el canal: `{e}`", ephemeral=True)
+            except Exception:
+                pass
 
 
 class TicketPanelSelect(Select):
@@ -258,9 +279,14 @@ class Tickets(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
+    async def cog_load(self):
+        # Registrar vistas persistentes durante la carga del Cog (antes del gateway)
+        self.bot.add_view(TicketPanelView())
+        self.bot.add_view(TicketControlView())
+
     @commands.Cog.listener()
     async def on_ready(self):
-        # Registrar vistas persistentes para que no expiren nunca
+        # Respaldo en on_ready
         self.bot.add_view(TicketPanelView())
         self.bot.add_view(TicketControlView())
 

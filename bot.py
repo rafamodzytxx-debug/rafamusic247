@@ -71,6 +71,17 @@ class RafaMusicBot(commands.Bot):
         await setup_tickets(self)
         await setup_rules(self)
 
+        # Registrar vistas interactivas persistentes ANTES de conectar
+        from cogs.tickets import TicketPanelView, TicketControlView
+        from cogs.general import ServerInviteView
+        from cogs.rules import RulesAcceptView
+
+        self.add_view(TicketPanelView())
+        self.add_view(TicketControlView())
+        self.add_view(ServerInviteView())
+        self.add_view(RulesAcceptView())
+        print("🔘 Vistas persistentes de tickets, reglas e invitación registradas con éxito.")
+
         # Sincronizar en segundo plano para evitar bloqueos por rate limit de Discord
         async def sync_slash_tree():
             try:
