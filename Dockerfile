@@ -8,6 +8,7 @@ ENV PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libopus0 \
+    nodejs \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 

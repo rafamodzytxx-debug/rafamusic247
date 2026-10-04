@@ -5,7 +5,11 @@ Rafa Music Pro - Creado y Desarrollado por Rafa
 
 import asyncio
 import functools
+import json
+import os
+import re
 import time
+import urllib.request
 from collections import deque
 from typing import Optional, List, Dict, Any
 import discord
@@ -13,7 +17,18 @@ import yt_dlp
 from config import DEFAULT_VOLUME, COLOR_PRIMARY, COLOR_SUCCESS, COLOR_ERROR, BOT_NAME, CREATOR_NAME
 from utils.storage import storage
 
-# Opciones optimizadas para yt-dlp
+# Gestión de Cookies de YouTube (opcional, para entornos de hosting como Railway)
+COOKIES_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cookies.txt")
+cookies_env = os.getenv("YOUTUBE_COOKIES") or os.getenv("COOKIES_DATA")
+if cookies_env and not os.path.exists(COOKIES_FILE):
+    try:
+        with open(COOKIES_FILE, "w", encoding="utf-8") as f:
+            f.write(cookies_env)
+        print("🍪 Cookies de YouTube inicializadas desde variable de entorno.")
+    except Exception as e:
+        print(f"⚠️ Error al crear cookies.txt: {e}")
+
+# Opciones optimizadas para yt-dlp con bypass de bot-check (Android / Web Embedded / iOS)
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
     'extractaudio': True,
@@ -28,7 +43,21 @@ YTDL_OPTIONS = {
     'no_warnings': True,
     'default_search': 'ytsearch',
     'source_address': '0.0.0.0',
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android', 'web_embedded', 'ios', 'mweb'],
+        }
+    },
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-us,en;q=0.5',
+    }
 }
+
+if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
+    YTDL_OPTIONS['cookiefile'] = COOKIES_FILE
+    print("🍪 Usando archivo cookies.txt para yt-dlp.")
 
 # Filtros de audio DJ con FFmpeg
 AUDIO_FILTERS = {
@@ -75,21 +104,84 @@ class Song:
 
     @classmethod
     async def create_source(cls, query: str, requester: discord.Member, loop: asyncio.AbstractEventLoop = None):
-        """Extrae la información completa del tema desde URL o búsqueda."""
+        """Extrae la información completa del tema desde URL o búsqueda con protección antibot y fallback a SoundCloud."""
         loop = loop or asyncio.get_event_loop()
         
-        # Si es una búsqueda directa sin url
+        query = query.strip()
+        is_video_id = bool(re.match(r'^[a-zA-Z0-9_-]{11}$', query))
         is_url = query.startswith("http://") or query.startswith("https://")
-        search_target = query if is_url else f"ytsearch1:{query}"
+        
+        if is_video_id:
+            search_target = f"https://www.youtube.com/watch?v={query}"
+        elif is_url:
+            search_target = query
+        else:
+            search_target = f"ytsearch1:{query}"
 
-        # Extraer usando hilo secundario
-        data = await loop.run_in_executor(
-            None,
-            lambda: ytdl.extract_info(search_target, download=False)
-        )
+        data = None
+        last_error = None
+
+        # 1. Intentar extracción principal (YouTube con extractor_args android/web_embedded)
+        try:
+            data = await loop.run_in_executor(
+                None,
+                lambda: ytdl.extract_info(search_target, download=False)
+            )
+        except Exception as e:
+            last_error = e
+            print(f"⚠️ Aviso en extracción YouTube: {e}")
+
+        # 2. Si falla por antibot o SABR, activar fallback automático a SoundCloud
+        if not data or ('entries' in data and not data.get('entries')):
+            print("🔄 Activando fallback automático hacia SoundCloud...")
+            search_term = None
+            
+            # Si era un video de YouTube, obtener el título real mediante oEmbed (API pública nunca bloqueada)
+            if is_video_id or "youtube.com/watch" in query or "youtu.be/" in query:
+                vid = query if is_video_id else None
+                if not vid:
+                    m = re.search(r'(?:v=|\/)([a-zA-Z0-9_-]{11})', query)
+                    if m:
+                        vid = m.group(1)
+                
+                if vid:
+                    try:
+                        def _fetch_oembed():
+                            req = urllib.request.Request(
+                                f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={vid}&format=json",
+                                headers={'User-Agent': 'Mozilla/5.0'}
+                            )
+                            with urllib.request.urlopen(req, timeout=5) as resp:
+                                return json.loads(resp.read().decode()).get('title')
+                        raw_title = await loop.run_in_executor(None, _fetch_oembed)
+                        if raw_title:
+                            # Limpiar palabras extra para optimizar la búsqueda
+                            search_term = re.sub(r'[\(\[][^\)\]]*(?:video|oficial|official|audio|lyric|remastered|hd|4k)[^\)\]]*[\)\]]', '', raw_title, flags=re.I).strip()
+                            search_term = re.sub(r'\s+', ' ', search_term)
+                    except Exception as e:
+                        print(f"Error en oEmbed: {e}")
+
+            if not search_term and not is_url:
+                search_term = query
+
+            if search_term:
+                try:
+                    sc_opts = dict(YTDL_OPTIONS)
+                    sc_opts['default_search'] = 'scsearch'
+                    def _fetch_sc():
+                        with yt_dlp.YoutubeDL(sc_opts) as sc_ydl:
+                            return sc_ydl.extract_info(f"scsearch1:{search_term}", download=False)
+                    data = await loop.run_in_executor(None, _fetch_sc)
+                    if data:
+                        print(f"✅ Fallback exitoso con SoundCloud para: {search_term}")
+                except Exception as sc_err:
+                    print(f"⚠️ Error en fallback SoundCloud: {sc_err}")
 
         if not data:
-            raise Exception("No se encontró ningún resultado.")
+            err_str = str(last_error) if last_error else ""
+            if "Sign in to confirm" in err_str:
+                raise Exception("YouTube bloqueó temporalmente la consulta. Intenta buscarla por título directo (ej: `/play nombre de la canción`).")
+            raise Exception(last_error or "No se encontró ningún resultado para esta canción.")
 
         if 'entries' in data:
             if not data['entries']:
@@ -178,8 +270,16 @@ class AutocompleteManager:
                     title = e.get('title') or 'Sin título'
                     dur = format_duration(e.get('duration'))
                     # Limitar nombre para Discord (máximo 100 caracteres)
-                    display = f"🎵 {title[:78]} [{dur}]"
-                    val = e.get('url') or e.get('webpage_url') or title
+                    vid_id = e.get('id')
+                    raw_url = e.get('url') or e.get('webpage_url') or ''
+                    if vid_id and len(vid_id) == 11:
+                        val = f"https://www.youtube.com/watch?v={vid_id}"
+                    elif raw_url.startswith("http"):
+                        val = raw_url
+                    elif len(raw_url) == 11:
+                        val = f"https://www.youtube.com/watch?v={raw_url}"
+                    else:
+                        val = title
                     out.append((display, val))
                 return out[:25]
 
