@@ -102,26 +102,145 @@ class Song:
         self.uploader: str = data.get('uploader') or data.get('channel', 'Desconocido')
         self.extractor: str = data.get('extractor', 'youtube')
 
+def _fetch_spotify_track_info(url: str) -> Optional[str]:
+    """Extrae el título y artista de un enlace de Spotify mediante metadatos y oEmbed."""
+    try:
+        import urllib.parse
+        oembed_url = f"https://open.spotify.com/oembed?url={urllib.parse.quote(url)}"
+        req = urllib.request.Request(oembed_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode())
+            title = data.get('title')
+            
+        req_page = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req_page, timeout=3) as resp_page:
+            html = resp_page.read().decode('utf-8', errors='ignore')
+            desc_m = re.search(r'<meta property="og:description" content="([^"]+)"', html)
+            if desc_m:
+                desc = desc_m.group(1)
+                artist = desc.split('·')[0].strip() if '·' in desc else desc.split('-')[0].strip()
+                if artist and title:
+                    return f"{artist} - {title}"
+        return title
+    except Exception as e:
+        print(f"Error resolviendo Spotify: {e}")
+        return None
+
+def fetch_spotify_playlist_tracks(url: str) -> List[str]:
+    """Extrae hasta 100 canciones de una playlist o álbum de Spotify mediante datos incrustados."""
+    try:
+        m = re.search(r'open\.spotify\.com\/(playlist|album)\/([a-zA-Z0-9]+)', url)
+        if not m:
+            return []
+        kind, item_id = m.groups()
+        embed_url = f"https://open.spotify.com/embed/{kind}/{item_id}"
+        req = urllib.request.Request(embed_url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
+            
+        match = re.search(r'<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>', html)
+        if match:
+            data = json.loads(match.group(1))
+            props = data.get('props', {}).get('pageProps', {}).get('state', {}).get('data', {}).get('entity', {})
+            track_list = props.get('trackList', [])
+            tracks = []
+            for t in track_list:
+                title = t.get('title')
+                artists = t.get('subtitle', '')
+                if title:
+                    tracks.append(f"{artists} - {title}" if artists else title)
+            return tracks
+    except Exception as e:
+        print(f"Error extrayendo playlist de Spotify: {e}")
+    return []
+
+def _fetch_apple_music_info(url: str) -> Optional[str]:
+    """Extrae el título y artista de un enlace de Apple Music."""
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            html = resp.read().decode('utf-8', errors='ignore')
+            title_m = re.search(r'<title>([^<]+)</title>', html)
+            if title_m:
+                raw = title_m.group(1)
+                raw = re.sub(r'\s*[\-–|]\s*Apple Music.*$', '', raw, flags=re.I).strip()
+                return raw
+    except Exception as e:
+        print(f"Error resolviendo Apple Music: {e}")
+    return None
+
+def resolve_universal_query(query: str) -> tuple[str, str, Optional[str]]:
+    """
+    Normaliza y detecta enlaces de Spotify, YouTube Shorts, YouTube Music, Apple Music,
+    SoundCloud o búsquedas libres.
+    Retorna (target_busqueda, nombre_plataforma, titulo_limpio).
+    """
+    q = query.strip()
+
+    # 1. YouTube Shorts
+    shorts_m = re.search(r'youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})', q)
+    if shorts_m:
+        return f"https://www.youtube.com/watch?v={shorts_m.group(1)}", "YouTube Shorts", None
+
+    # 2. YouTube Music
+    if "music.youtube.com" in q:
+        q = q.replace("music.youtube.com", "www.youtube.com")
+
+    # 3. Spotify Track
+    spotify_track = re.search(r'open\.spotify\.com\/track\/([a-zA-Z0-9]+)', q)
+    if spotify_track:
+        info = _fetch_spotify_track_info(f"https://open.spotify.com/track/{spotify_track.group(1)}")
+        if info:
+            return f"ytsearch1:{info}", "Spotify", info
+
+    # 4. Apple Music
+    if "music.apple.com" in q:
+        apple_info = _fetch_apple_music_info(q)
+        if apple_info:
+            return f"ytsearch1:{apple_info}", "Apple Music", apple_info
+
+    # 5. Prefijo explícito de SoundCloud (ej: sc:cancion o soundcloud:cancion)
+    if q.lower().startswith("sc:") or q.lower().startswith("soundcloud:"):
+        term = re.sub(r'^(?:sc|soundcloud):', '', q, flags=re.I).strip()
+        return f"scsearch1:{term}", "SoundCloud", term
+
+    # 6. ID de video de YouTube (11 caracteres)
+    if re.match(r'^[a-zA-Z0-9_-]{11}$', q):
+        return f"https://www.youtube.com/watch?v={q}", "YouTube", None
+
+    # 7. Enlace directo URL (SoundCloud, YouTube normal, enlaces mp3, radio)
+    if q.startswith("http://") or q.startswith("https://"):
+        return q, "URL Directa", None
+
+    # 8. Búsqueda por texto (Cualquier canción, artista, género o remix)
+    return f"ytsearch1:{q}", "Búsqueda Global", None
+
+
+class Song:
+    """Representa una pista musical."""
+    def __init__(self, data: Dict[str, Any], requester: discord.Member, platform_tag: str = "🎵"):
+        self.data = data
+        self.requester = requester
+        self.title: str = data.get('title', 'Canción desconocida')
+        self.webpage_url: str = data.get('webpage_url') or data.get('url', '')
+        self.stream_url: str = data.get('url', '')
+        self.duration: Optional[int] = data.get('duration')
+        self.duration_str: str = format_duration(self.duration)
+        self.thumbnail: Optional[str] = data.get('thumbnail')
+        self.uploader: str = data.get('uploader') or data.get('channel', 'Desconocido')
+        self.extractor: str = data.get('extractor', 'youtube')
+        self.platform_tag: str = platform_tag
+
     @classmethod
     async def create_source(cls, query: str, requester: discord.Member, loop: asyncio.AbstractEventLoop = None):
-        """Extrae la información completa del tema desde URL o búsqueda con protección antibot y fallback a SoundCloud."""
+        """Extrae la información completa del tema desde cualquier enlace o búsqueda con soporte multi-fuente."""
         loop = loop or asyncio.get_event_loop()
         
-        query = query.strip()
-        is_video_id = bool(re.match(r'^[a-zA-Z0-9_-]{11}$', query))
-        is_url = query.startswith("http://") or query.startswith("https://")
-        
-        if is_video_id:
-            search_target = f"https://www.youtube.com/watch?v={query}"
-        elif is_url:
-            search_target = query
-        else:
-            search_target = f"ytsearch1:{query}"
-
+        search_target, platform, display_title = resolve_universal_query(query)
         data = None
         last_error = None
 
-        # 1. Intentar extracción principal (YouTube con extractor_args android/web_embedded)
+        # 1. Intentar extracción principal (YouTube / Enlace directo con extractor_args)
         try:
             data = await loop.run_in_executor(
                 None,
@@ -129,22 +248,18 @@ class Song:
             )
         except Exception as e:
             last_error = e
-            print(f"⚠️ Aviso en extracción YouTube: {e}")
+            print(f"⚠️ Aviso en extracción principal: {e}")
 
-        # 2. Si falla por antibot o SABR, activar fallback automático a SoundCloud
+        # 2. Si falla o no hay entradas, activar rescate automático a SoundCloud
         if not data or ('entries' in data and not data.get('entries')):
-            print("🔄 Activando fallback automático hacia SoundCloud...")
-            search_term = None
+            print("🔄 Activando rescate automático multi-fuente (SoundCloud)...")
+            fallback_query = display_title
             
-            # Si era un video de YouTube, obtener el título real mediante oEmbed (API pública nunca bloqueada)
-            if is_video_id or "youtube.com/watch" in query or "youtu.be/" in query:
-                vid = query if is_video_id else None
-                if not vid:
-                    m = re.search(r'(?:v=|\/)([a-zA-Z0-9_-]{11})', query)
-                    if m:
-                        vid = m.group(1)
-                
-                if vid:
+            # Si era un enlace de YouTube que falló, extraer el título real con oEmbed
+            if not fallback_query and ("youtube.com/watch" in search_target or "youtu.be/" in search_target):
+                m = re.search(r'(?:v=|\/)([a-zA-Z0-9_-]{11})', search_target)
+                if m:
+                    vid = m.group(1)
                     try:
                         def _fetch_oembed():
                             req = urllib.request.Request(
@@ -155,78 +270,108 @@ class Song:
                                 return json.loads(resp.read().decode()).get('title')
                         raw_title = await loop.run_in_executor(None, _fetch_oembed)
                         if raw_title:
-                            # Limpiar palabras extra para optimizar la búsqueda
-                            search_term = re.sub(r'[\(\[][^\)\]]*(?:video|oficial|official|audio|lyric|remastered|hd|4k)[^\)\]]*[\)\]]', '', raw_title, flags=re.I).strip()
-                            search_term = re.sub(r'\s+', ' ', search_term)
+                            fallback_query = re.sub(r'[\(\[][^\)\]]*(?:video|oficial|official|audio|lyric|remastered|hd|4k)[^\)\]]*[\)\]]', '', raw_title, flags=re.I).strip()
+                            fallback_query = re.sub(r'\s+', ' ', fallback_query)
                     except Exception as e:
                         print(f"Error en oEmbed: {e}")
 
-            if not search_term and not is_url:
-                search_term = query
+            if not fallback_query and not (query.startswith("http://") or query.startswith("https://")):
+                fallback_query = query
 
-            if search_term:
+            if fallback_query:
                 try:
                     sc_opts = dict(YTDL_OPTIONS)
                     sc_opts['default_search'] = 'scsearch'
                     def _fetch_sc():
                         with yt_dlp.YoutubeDL(sc_opts) as sc_ydl:
-                            return sc_ydl.extract_info(f"scsearch1:{search_term}", download=False)
+                            return sc_ydl.extract_info(f"scsearch1:{fallback_query}", download=False)
                     data = await loop.run_in_executor(None, _fetch_sc)
                     if data:
-                        print(f"✅ Fallback exitoso con SoundCloud para: {search_term}")
+                        print(f"✅ Canción recuperada exitosamente vía SoundCloud: {fallback_query}")
                 except Exception as sc_err:
-                    print(f"⚠️ Error en fallback SoundCloud: {sc_err}")
+                    print(f"⚠️ Error en rescate SoundCloud: {sc_err}")
 
         if not data:
             err_str = str(last_error) if last_error else ""
             if "Sign in to confirm" in err_str:
-                raise Exception("YouTube bloqueó temporalmente la consulta. Intenta buscarla por título directo (ej: `/play nombre de la canción`).")
-            raise Exception(last_error or "No se encontró ningún resultado para esta canción.")
+                raise Exception("No se pudo obtener el audio en este momento. Intenta escribiendo el nombre de la canción directamente (ej: `/play nombre de la canción`).")
+            raise Exception(last_error or "No se encontró ningún resultado para esta búsqueda musical.")
 
         if 'entries' in data:
             if not data['entries']:
-                raise Exception("No se encontró ninguna canción con ese nombre.")
+                raise Exception("No se encontró ninguna canción con ese nombre o enlace.")
             data = data['entries'][0]
 
-        return cls(data, requester)
+        return cls(data, requester, platform_tag=platform)
 
     @classmethod
     async def create_sources(cls, query: str, requester: discord.Member, loop: asyncio.AbstractEventLoop = None) -> tuple[List['Song'], bool, str]:
         """
-        Extrae canciones individuales o listas de reproducción (Playlists) completas.
+        Extrae canciones individuales o listas de reproducción (YouTube, Spotify Playlists/Álbumes).
         Retorna (lista_canciones, es_playlist, titulo_playlist).
         """
         loop = loop or asyncio.get_event_loop()
-        is_url = query.startswith("http://") or query.startswith("https://")
-        is_playlist = is_url and ("list=" in query or "playlist" in query)
+        q = query.strip()
 
-        if is_playlist:
+        # 1. Soporte para Playlists y Álbumes de Spotify
+        if "open.spotify.com/playlist/" in q or "open.spotify.com/album/" in q:
+            spotify_tracks = await loop.run_in_executor(None, lambda: fetch_spotify_playlist_tracks(q))
+            if spotify_tracks:
+                is_album = "album" in q
+                tipo = "Álbum de Spotify" if is_album else "Playlist de Spotify"
+                # Cargar la primera canción inmediatamente para que empiece la reproducción sin demora
+                first_song = await cls.create_source(spotify_tracks[0], requester, loop)
+                songs = [first_song]
+                
+                # Crear las siguientes pistas
+                for track_name in spotify_tracks[1:50]: # Límite inicial de 50 temas para fluidez
+                    dummy_data = {
+                        'title': track_name,
+                        'webpage_url': f"https://www.youtube.com/results?search_query={urllib.parse.quote(track_name)}",
+                        'url': '', # Se resolverá al reproducir si no tiene url
+                        'duration': None,
+                        'uploader': 'Spotify',
+                        '_lazy_query': track_name
+                    }
+                    songs.append(cls(dummy_data, requester, platform_tag="Spotify"))
+                return songs, True, f"{tipo} ({len(songs)} canciones)"
+
+        # 2. Soporte para Playlists de YouTube
+        is_url = q.startswith("http://") or q.startswith("https://")
+        is_yt_playlist = is_url and ("list=" in q or "playlist" in q)
+
+        if is_yt_playlist:
             fast_p_opts = {
                 'format': 'bestaudio/best',
                 'extract_flat': 'in_playlist',
                 'skip_download': True,
                 'quiet': True,
                 'no_warnings': True,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'web_embedded', 'ios'],
+                    }
+                }
             }
             def _fetch_playlist():
                 with yt_dlp.YoutubeDL(fast_p_opts) as p_ydl:
-                    return p_ydl.extract_info(query, download=False)
+                    return p_ydl.extract_info(q, download=False)
 
             data = await loop.run_in_executor(None, _fetch_playlist)
             if not data or 'entries' not in data:
-                raise Exception("No se pudo cargar la lista de reproducción.")
+                raise Exception("No se pudo cargar la lista de reproducción de YouTube.")
 
             songs = []
             for e in data['entries']:
                 if e:
-                    songs.append(cls(e, requester))
+                    songs.append(cls(e, requester, platform_tag="YouTube"))
 
             if not songs:
                 raise Exception("La lista de reproducción está vacía.")
 
             return songs, True, data.get('title', 'Lista de Reproducción')
         else:
-            song = await cls.create_source(query, requester, loop)
+            song = await cls.create_source(q, requester, loop)
             return [song], False, ""
 
 
@@ -490,13 +635,34 @@ class GuildPlayer:
             self.is_playing = True
 
             try:
-                # Obtener url de stream fresca para evitar enlaces caducados
                 loop = asyncio.get_event_loop()
-                fresh_data = await loop.run_in_executor(
-                    None,
-                    lambda: ytdl.extract_info(next_song.webpage_url, download=False)
-                )
-                stream_url = fresh_data.get('url') if fresh_data else next_song.stream_url
+                stream_url = None
+
+                # 1. Si la canción requiere resolución tardía (ej: de Spotify o lista)
+                lazy_q = next_song.data.get('_lazy_query')
+                if lazy_q:
+                    resolved = await Song.create_source(lazy_q, next_song.requester, loop)
+                    next_song.title = resolved.title
+                    next_song.webpage_url = resolved.webpage_url
+                    next_song.stream_url = resolved.stream_url
+                    next_song.duration = resolved.duration
+                    next_song.duration_str = resolved.duration_str
+                    next_song.thumbnail = resolved.thumbnail
+                    stream_url = resolved.stream_url
+                elif next_song.stream_url and ("googlevideo.com" not in next_song.stream_url):
+                    stream_url = next_song.stream_url
+                else:
+                    try:
+                        fresh_data = await loop.run_in_executor(
+                            None,
+                            lambda: ytdl.extract_info(next_song.webpage_url, download=False)
+                        )
+                        stream_url = fresh_data.get('url') if fresh_data else next_song.stream_url
+                    except Exception:
+                        stream_url = next_song.stream_url
+
+                if not stream_url:
+                    stream_url = next_song.stream_url
 
                 # Aplicar filtro de audio si está activo
                 filter_args = AUDIO_FILTERS.get(self.filter_mode, {}).get("ffmpeg", "")
