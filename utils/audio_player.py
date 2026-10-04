@@ -30,11 +30,18 @@ YTDL_OPTIONS = {
     'source_address': '0.0.0.0',
 }
 
-# Opciones de FFmpeg para reconexión y streaming fluido
-FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',
-    'options': '-vn'
+# Filtros de audio DJ con FFmpeg
+AUDIO_FILTERS = {
+    "off": {"name": "Normal (Sin Filtros)", "ffmpeg": ""},
+    "bassboost": {"name": "Bass Boost 🔊", "ffmpeg": "-af bass=g=12:f=110:w=0.6"},
+    "bassboost_extreme": {"name": "Bass Boost Extremo 💥", "ffmpeg": "-af bass=g=22:f=110:w=0.6"},
+    "nightcore": {"name": "Nightcore ⚡", "ffmpeg": "-af asetrate=48000*1.25,aresample=48000,atempo=1.06"},
+    "vaporwave": {"name": "Vaporwave 🌊", "ffmpeg": "-af asetrate=48000*0.82,aresample=48000,atempo=1.0"},
+    "8d": {"name": "Audio 8D 🎧", "ffmpeg": "-af apulsator=hz=0.125"}
 }
+
+# Opciones de FFmpeg base
+BASE_BEFORE_OPTIONS = '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
 
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
 
@@ -90,6 +97,45 @@ class Song:
             data = data['entries'][0]
 
         return cls(data, requester)
+
+    @classmethod
+    async def create_sources(cls, query: str, requester: discord.Member, loop: asyncio.AbstractEventLoop = None) -> tuple[List['Song'], bool, str]:
+        """
+        Extrae canciones individuales o listas de reproducción (Playlists) completas.
+        Retorna (lista_canciones, es_playlist, titulo_playlist).
+        """
+        loop = loop or asyncio.get_event_loop()
+        is_url = query.startswith("http://") or query.startswith("https://")
+        is_playlist = is_url and ("list=" in query or "playlist" in query)
+
+        if is_playlist:
+            fast_p_opts = {
+                'format': 'bestaudio/best',
+                'extract_flat': 'in_playlist',
+                'skip_download': True,
+                'quiet': True,
+                'no_warnings': True,
+            }
+            def _fetch_playlist():
+                with yt_dlp.YoutubeDL(fast_p_opts) as p_ydl:
+                    return p_ydl.extract_info(query, download=False)
+
+            data = await loop.run_in_executor(None, _fetch_playlist)
+            if not data or 'entries' not in data:
+                raise Exception("No se pudo cargar la lista de reproducción.")
+
+            songs = []
+            for e in data['entries']:
+                if e:
+                    songs.append(cls(e, requester))
+
+            if not songs:
+                raise Exception("La lista de reproducción está vacía.")
+
+            return songs, True, data.get('title', 'Lista de Reproducción')
+        else:
+            song = await cls.create_source(query, requester, loop)
+            return [song], False, ""
 
 
 class AutocompleteManager:
@@ -159,6 +205,7 @@ class GuildPlayer:
         
         self.volume: float = DEFAULT_VOLUME
         self.loop_mode: str = "off"  # "off", "song", "queue"
+        self.filter_mode: str = "off" # "off", "bassboost", "nightcore", "vaporwave", "8d"
         self.now_playing_message: Optional[discord.Message] = None
         
         self.is_playing: bool = False
@@ -240,9 +287,14 @@ class GuildPlayer:
                 )
                 stream_url = fresh_data.get('url') if fresh_data else next_song.stream_url
 
+                # Aplicar filtro de audio si está activo
+                filter_args = AUDIO_FILTERS.get(self.filter_mode, {}).get("ffmpeg", "")
+                custom_opts = f"-vn {filter_args}".strip()
+
                 audio_source = discord.FFmpegPCMAudio(
                     stream_url,
-                    **FFMPEG_OPTIONS,
+                    before_options=BASE_BEFORE_OPTIONS,
+                    options=custom_opts,
                     executable='ffmpeg'
                 )
                 volume_source = discord.PCMVolumeTransformer(audio_source, volume=self.volume)
@@ -274,13 +326,15 @@ class GuildPlayer:
 
         from utils.ui_components import PlayerControlView
 
+        filter_name = AUDIO_FILTERS.get(self.filter_mode, {}).get("name", "Normal")
         embed = discord.Embed(
             title="🎶 Ahora Reproduciendo",
             description=f"### [{song.title}]({song.webpage_url})\n\n"
                         f"⏱️ **Duración:** `{song.duration_str}`\n"
                         f"👤 **Canal / Artista:** `{song.uploader}`\n"
                         f"🙋 **Pedido por:** {song.requester.mention}\n"
-                        f"🔊 **Volumen:** `{int(self.volume * 100)}%` | 🔁 **Repetición:** `{self.loop_mode.capitalize()}` | 🛡️ **24/7:** `{'Activado 🟢' if self.is_247 else 'Desactivado ⚪'}`",
+                        f"🔊 **Volumen:** `{int(self.volume * 100)}%` | 🎛️ **Filtro:** `{filter_name}`\n"
+                        f"🔁 **Repetición:** `{self.loop_mode.capitalize()}` | 🛡️ **24/7:** `{'Activado 🟢' if self.is_247 else 'Desactivado ⚪'}`",
             color=COLOR_PRIMARY
         )
         if song.thumbnail:

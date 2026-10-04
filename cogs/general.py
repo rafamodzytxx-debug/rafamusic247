@@ -91,7 +91,7 @@ class General(commands.Cog):
             name="🎵 Comandos de Música",
             value=(
                 "🔹 `/join` - Conecta el bot a tu canal de voz.\n"
-                "🔹 `/play [musica]` - Busca y reproduce canciones con autocompletado en vivo.\n"
+                "🔹 `/play [musica]` - Busca canciones o listas de reproducción (Playlists) con autocompletado en vivo.\n"
                 "🔹 `/skip` - Salta la canción actual.\n"
                 "🔹 `/pause` - Pausa la reproducción.\n"
                 "🔹 `/resume` - Reanuda la reproducción.\n"
@@ -108,6 +108,30 @@ class General(commands.Cog):
         )
 
         embed.add_field(
+            name="🎛️ Filtros y Efectos DJ",
+            value=(
+                "🔊 `/bassboost` - Graves aumentados al máximo.\n"
+                "⚡ `/nightcore` - Modo acelerado y tono agudo estilo remix.\n"
+                "🌊 `/vaporwave` - Modo ralentizado, relajante y nostálgico.\n"
+                "🎧 `/audio8d` - Efecto 360° que rota entre tus auriculares.\n"
+                "🎚️ `/filtro [efecto]` - Menú selector de todos los filtros."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
+            name="📻 Estaciones de Radio 24/7 en Vivo",
+            value=(
+                "☕ `/radio lofi` - Lofi Hip Hop Beats (Chill / Estudio).\n"
+                "🔥 `/radio reggaeton` - Éxitos del género urbano sin cortes.\n"
+                "🏎️ `/radio phonk` - Drift Phonk y graves pesados para jugar.\n"
+                "⚡ `/radio electro` - Electrónica & EDM festival 24/7.\n"
+                "🎸 `/radio rock` - Lo mejor del Rock clásico 80s/90s."
+            ),
+            inline=False
+        )
+
+        embed.add_field(
             name="🛡️ Modo 24/7 Permanente",
             value=(
                 "🟢 `/bot canal_24_7` o texto `/bot canal 24.7` - Activa el bot 24/7 en tu canal (nunca se desconecta).\n"
@@ -119,7 +143,7 @@ class General(commands.Cog):
         embed.add_field(
             name="ℹ️ Información y Servidores",
             value=(
-                "👑 `/creditos` - Información del desarrollador Rafa y estadísticas.\n"
+                f"👑 `/creditos` - Información de {CREATOR_NAME} y estadísticas.\n"
                 "➕ `/invitar` - Agrega el bot a cualquier servidor de Discord.\n"
                 "📶 `/ping` - Comprueba la latencia del bot con Discord."
             ),

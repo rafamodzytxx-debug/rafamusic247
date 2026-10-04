@@ -109,15 +109,39 @@ class Music(commands.Cog):
         player.text_channel = interaction.channel
 
         try:
-            # Obtener fuente de audio
-            song = await Song.create_source(musica, interaction.user, loop=self.bot.loop)
+            # Obtener canciones (soporta tanto individuales como playlists completas)
+            songs, is_playlist, playlist_title = await Song.create_sources(musica, interaction.user, loop=self.bot.loop)
         except Exception as e:
             embed = discord.Embed(
-                title="❌ Error al buscar la canción",
+                title="❌ Error al cargar la música",
                 description=f"No se pudo cargar: `{e}`\nIntenta con otro título o enlace.",
                 color=COLOR_ERROR
             )
             return await interaction.followup.send(embed=embed)
+
+        if is_playlist:
+            # Agregar todas las canciones de la lista a la cola
+            for s in songs:
+                player.queue.append(s)
+
+            embed = discord.Embed(
+                title="📚 ¡Lista de Reproducción Agregada!",
+                description=f"### 🎵 {playlist_title}\n\n"
+                            f"🔢 **Total de canciones añadidas:** `{len(songs)}`\n"
+                            f"🙋 **Añadida por:** {interaction.user.mention}\n"
+                            f"📜 Usa `/queue` para ver la lista completa.",
+                color=COLOR_PRIMARY
+            )
+            embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
+            await interaction.followup.send(embed=embed)
+
+            # Si no estaba sonando nada, arrancar
+            if not player.is_playing:
+                await player.play_next()
+            return
+
+        # Canción individual
+        song = songs[0]
 
         # Si ya está sonando algo, agregar a la cola
         if player.is_playing or (player.voice_client and player.voice_client.is_playing()):
@@ -346,6 +370,79 @@ class Music(commands.Cog):
 
         await player.cleanup()
         await interaction.response.send_message("👋 **Desconectado del canal de voz.** ¡Hasta luego!")
+
+    # ==========================================
+    # COMANDOS DE FILTROS Y EFECTOS DJ
+    # ==========================================
+    @app_commands.command(name="filtro", description="Aplica efectos de sonido DJ en tiempo real a la música")
+    @app_commands.choices(efecto=[
+        app_commands.Choice(name="Desactivar (Sonido Normal)", value="off"),
+        app_commands.Choice(name="Bass Boost (Bajos Potentes) 🔊", value="bassboost"),
+        app_commands.Choice(name="Bass Boost Extremo 💥", value="bassboost_extreme"),
+        app_commands.Choice(name="Nightcore (Acelerado + Tono Alto) ⚡", value="nightcore"),
+        app_commands.Choice(name="Vaporwave (Lento + Relajante) 🌊", value="vaporwave"),
+        app_commands.Choice(name="Audio 8D (Efecto Envolvente 360°) 🎧", value="8d"),
+    ])
+    async def filtro_cmd(self, interaction: discord.Interaction, efecto: app_commands.Choice[str]):
+        player = self.music_manager.get_player(interaction.guild)
+        player.filter_mode = efecto.value
+        
+        embed = discord.Embed(
+            title="🎛️ Efecto de Audio DJ Aplicado",
+            description=f"El filtro se ha establecido en: **{efecto.name}**\n"
+                        f"*(Se aplicará a la canción actual y a las siguientes de la cola)*",
+            color=COLOR_PRIMARY
+        )
+        embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="bassboost", description="Potencia los bajos y frecuencias graves al máximo")
+    async def bassboost_cmd(self, interaction: discord.Interaction):
+        player = self.music_manager.get_player(interaction.guild)
+        player.filter_mode = "bassboost"
+        embed = discord.Embed(
+            title="🔊 Bass Boost Activado",
+            description="¡Graves aumentados al máximo! Siente el impacto del bajo.",
+            color=COLOR_SUCCESS
+        )
+        embed.set_footer(text=f"{BOT_NAME} • Creado por {CREATOR_NAME}")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="nightcore", description="Activa el modo Nightcore (más rápido y tono agudo)")
+    async def nightcore_cmd(self, interaction: discord.Interaction):
+        player = self.music_manager.get_player(interaction.guild)
+        player.filter_mode = "nightcore"
+        embed = discord.Embed(
+            title="⚡ Modo Nightcore Activado",
+            description="Velocidad y tono aumentados al estilo Nightcore remix.",
+            color=COLOR_PRIMARY
+        )
+        embed.set_footer(text=f"{BOT_NAME} • Creado por {CREATOR_NAME}")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="vaporwave", description="Activa el modo Vaporwave (ralentizado y relajante)")
+    async def vaporwave_cmd(self, interaction: discord.Interaction):
+        player = self.music_manager.get_player(interaction.guild)
+        player.filter_mode = "vaporwave"
+        embed = discord.Embed(
+            title="🌊 Modo Vaporwave Activado",
+            description="Música ralentizada y relajante con estética retro.",
+            color=COLOR_PRIMARY
+        )
+        embed.set_footer(text=f"{BOT_NAME} • Creado por {CREATOR_NAME}")
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="audio8d", description="Activa el efecto envolvente 8D (gira entre auriculares)")
+    async def audio8d_cmd(self, interaction: discord.Interaction):
+        player = self.music_manager.get_player(interaction.guild)
+        player.filter_mode = "8d"
+        embed = discord.Embed(
+            title="🎧 Efecto 8D Activado",
+            description="¡Ponte auriculares! El sonido rotará en 360° de oreja a oreja.",
+            color=COLOR_PRIMARY
+        )
+        embed.set_footer(text=f"{BOT_NAME} • Creado por {CREATOR_NAME}")
+        await interaction.response.send_message(embed=embed)
 
 async def setup(bot: commands.Bot, music_manager: MusicManager):
     await bot.add_cog(Music(bot, music_manager))
