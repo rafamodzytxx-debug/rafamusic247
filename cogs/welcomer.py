@@ -67,7 +67,7 @@ class Welcomer(commands.Cog):
 
         try:
             # Generar tarjeta personalizada
-            avatar_url = member.display_avatar.url
+            avatar_url = member.display_avatar.with_format("png").url
             card_buf = await generate_welcome_card(
                 member_name=member.display_name,
                 server_name=member.guild.name,
@@ -122,7 +122,7 @@ class Welcomer(commands.Cog):
             return
 
         try:
-            avatar_url = member.display_avatar.url
+            avatar_url = member.display_avatar.with_format("png").url
             card_buf = await generate_welcome_card(
                 member_name=member.display_name,
                 server_name=member.guild.name,
@@ -171,7 +171,7 @@ class Welcomer(commands.Cog):
             member_name=interaction.user.display_name,
             server_name=interaction.guild.name,
             member_count=interaction.guild.member_count,
-            avatar_url=interaction.user.display_avatar.url,
+            avatar_url=interaction.user.display_avatar.with_format("png").url,
             is_welcome=True
         )
         file = discord.File(fp=card_buf, filename="welcome.png")
@@ -180,6 +180,7 @@ class Welcomer(commands.Cog):
             title=f"✨ ¡Bienvenido/a a {interaction.guild.name}! ✨",
             description=(
                 f"👋 ¡Hola {interaction.user.mention}! Te damos una cálida bienvenida a nuestro servidor.\n\n"
+                f"👤 **Usuario:** `{interaction.user.name}`\n"
                 f"👑 **Creador Oficial:** `{CREATOR_NAME}`\n"
                 f"📜 Por favor revisa las reglas y los canales de información.\n"
                 f"🎉 ¡Eres el miembro número **#{interaction.guild.member_count}**!\n\n"
@@ -187,8 +188,12 @@ class Welcomer(commands.Cog):
             ),
             color=COLOR_SUCCESS
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.set_image(url="attachment://welcome.png")
-        embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
+        embed.set_footer(
+            text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}",
+            icon_url=self.bot.user.display_avatar.url if self.bot.user else None
+        )
 
         await channel.send(content=f"🎉 ¡Demostración de bienvenida! {interaction.user.mention}", embed=embed, file=file)
         await interaction.followup.send(f"✅ ¡Tarjeta de bienvenida de prueba enviada con éxito a {channel.mention}!", ephemeral=True)
@@ -207,7 +212,7 @@ class Welcomer(commands.Cog):
             member_name=interaction.user.display_name,
             server_name=interaction.guild.name,
             member_count=interaction.guild.member_count,
-            avatar_url=interaction.user.display_avatar.url,
+            avatar_url=interaction.user.display_avatar.with_format("png").url,
             is_welcome=False
         )
         file = discord.File(fp=card_buf, filename="goodbye.png")
@@ -215,14 +220,19 @@ class Welcomer(commands.Cog):
         embed = discord.Embed(
             title="👋 ¡Hasta Pronto! 👋",
             description=(
-                f"**{interaction.user.display_name}** ha dejado el servidor.\n"
+                f"👤 **Usuario:** `{interaction.user.name}` ({interaction.user.mention})\n\n"
+                f"Ha dejado la comunidad de **{interaction.guild.name}**.\n"
                 f"Le deseamos lo mejor y esperamos volver a verlo pronto.\n\n"
                 f"👥 Ahora quedamos **{interaction.guild.member_count} miembros** en la comunidad."
             ),
             color=COLOR_ERROR
         )
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
         embed.set_image(url="attachment://goodbye.png")
-        embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
+        embed.set_footer(
+            text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}",
+            icon_url=self.bot.user.display_avatar.url if self.bot.user else None
+        )
 
         await channel.send(embed=embed, file=file)
         await interaction.followup.send(f"✅ ¡Tarjeta de despedida de prueba enviada con éxito a {channel.mention}!", ephemeral=True)

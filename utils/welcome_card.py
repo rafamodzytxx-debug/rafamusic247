@@ -12,7 +12,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 async def fetch_avatar_image(avatar_url: str) -> Image.Image:
     """Descarga el avatar del usuario y lo convierte en objeto PIL Image."""
     try:
-        async with aiohttp.ClientSession() as session:
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        async with aiohttp.ClientSession(headers=headers) as session:
             async with session.get(avatar_url) as resp:
                 if resp.status == 200:
                     data = await resp.read()
