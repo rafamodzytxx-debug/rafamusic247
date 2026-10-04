@@ -230,13 +230,31 @@ class Song:
             return [song], False, ""
 
 
+# Opciones para búsquedas rápidas con bypass de bot-check
+FAST_SEARCH_OPTS = {
+    'quiet': True,
+    'no_warnings': True,
+    'extract_flat': 'in_playlist',
+    'skip_download': True,
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['android', 'web_embedded', 'ios', 'mweb'],
+        }
+    },
+    'http_headers': {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+    }
+}
+if os.path.exists(COOKIES_FILE) and os.path.getsize(COOKIES_FILE) > 0:
+    FAST_SEARCH_OPTS['cookiefile'] = COOKIES_FILE
+
 class AutocompleteManager:
-    """Gestor de autocompletado en tiempo real para el comando /play."""
+    """Gestor de autocompletado en tiempo real ultra-rápido para el comando /play."""
     @staticmethod
     async def search_suggestions(query: str) -> List[tuple[str, str]]:
         """
-        Retorna una lista de tuplas (nombre_a_mostrar, valor_busqueda).
-        Optimizado para responder antes del timeout de 3 segundos de Discord.
+        Retorna una lista de sugerencias instantáneas.
+        Combina la API instantánea de Google Suggestions (~40ms) con yt-dlp y SoundCloud.
         """
         query = query.strip()
         if not query:
@@ -250,72 +268,133 @@ class AutocompleteManager:
             if now - cache_time < CACHE_TTL:
                 return results
 
-        # Opciones ultraligeras para extraer solo títulos
-        fast_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': 'in_playlist',
-            'skip_download': True,
-        }
+        results = []
 
-        def _fetch():
-            with yt_dlp.YoutubeDL(fast_opts) as fast_ydl:
-                search_query = f"ytsearch25:{query}"
-                res = fast_ydl.extract_info(search_query, download=False)
-                entries = res.get('entries', []) if res else []
-                out = []
-                for e in entries:
-                    if not e:
-                        continue
-                    title = e.get('title') or 'Sin título'
-                    dur = format_duration(e.get('duration'))
-                    # Limitar nombre para Discord (máximo 100 caracteres)
-                    vid_id = e.get('id')
-                    raw_url = e.get('url') or e.get('webpage_url') or ''
-                    if vid_id and len(vid_id) == 11:
-                        val = f"https://www.youtube.com/watch?v={vid_id}"
-                    elif raw_url.startswith("http"):
-                        val = raw_url
-                    elif len(raw_url) == 11:
-                        val = f"https://www.youtube.com/watch?v={raw_url}"
-                    else:
-                        val = title
-                    out.append((display, val))
-                return out[:25]
+        # 1. Sugerencias instantáneas de Google/YouTube (~40ms)
+        def _fetch_google_suggest():
+            try:
+                import urllib.parse
+                url = f"https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&q={urllib.parse.quote(query)}"
+                req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req, timeout=1.0) as resp:
+                    data = json.loads(resp.read().decode())
+                    if len(data) > 1 and isinstance(data[1], list):
+                        return data[1][:12]
+            except Exception:
+                pass
+            return []
+
+        # 2. Canciones reales directas con yt-dlp usando cliente android
+        def _fetch_ytdl():
+            try:
+                with yt_dlp.YoutubeDL(FAST_SEARCH_OPTS) as fast_ydl:
+                    res = fast_ydl.extract_info(f"ytsearch10:{query}", download=False)
+                    entries = res.get('entries', []) if res else []
+                    out = []
+                    for e in entries:
+                        if not e:
+                            continue
+                        title = e.get('title') or 'Sin título'
+                        dur = format_duration(e.get('duration'))
+                        display = f"🎵 {title[:76]} [{dur}]"
+                        vid_id = e.get('id')
+                        raw_url = e.get('url') or e.get('webpage_url') or ''
+                        if vid_id and len(vid_id) == 11:
+                            val = f"https://www.youtube.com/watch?v={vid_id}"
+                        elif raw_url.startswith("http"):
+                            val = raw_url
+                        elif len(raw_url) == 11:
+                            val = f"https://www.youtube.com/watch?v={raw_url}"
+                        else:
+                            val = title
+                        out.append((display, val))
+                    return out
+            except Exception:
+                return []
+
+        loop = asyncio.get_event_loop()
+        suggest_task = loop.run_in_executor(None, _fetch_google_suggest)
+        ytdl_task = loop.run_in_executor(None, _fetch_ytdl)
 
         try:
-            loop = asyncio.get_event_loop()
-            results = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=2.5)
-            _autocomplete_cache[query.lower()] = (now, results)
-            return results
+            # Esperar ambas en paralelo con timeout seguro para Discord (1.8s)
+            ytdl_res, google_res = await asyncio.gather(
+                asyncio.wait_for(ytdl_task, timeout=1.8),
+                suggest_task,
+                return_exceptions=True
+            )
+            if isinstance(ytdl_res, list) and ytdl_res:
+                results.extend(ytdl_res)
+            if isinstance(google_res, list) and google_res:
+                for s in google_res:
+                    if not any(val.lower() == s.lower() for _, val in results):
+                        results.append((f"🔥 {s.title()}", s))
         except Exception:
-            return []
+            try:
+                google_res = await asyncio.wait_for(suggest_task, timeout=0.6)
+                if isinstance(google_res, list):
+                    for s in google_res:
+                        results.append((f"🔥 {s.title()}", s))
+            except Exception:
+                pass
+
+        if results:
+            _autocomplete_cache[query.lower()] = (now, results)
+
+        return results[:25]
 
     @staticmethod
     async def get_search_results(query: str, limit: int = 15) -> List[Dict[str, Any]]:
-        """Retorna hasta 15 resultados completos para el menú interactivo /buscar."""
-        fast_opts = {
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': 'in_playlist',
-            'skip_download': True,
-        }
+        """Retorna hasta 15 resultados completos para el menú interactivo /buscar con soporte dual YouTube + SoundCloud."""
         def _fetch():
-            with yt_dlp.YoutubeDL(fast_opts) as ydl:
-                res = ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
-                entries = res.get('entries', []) if res else []
-                clean = []
-                for e in entries:
-                    if not e:
-                        continue
-                    clean.append({
-                        'title': e.get('title', 'Sin título'),
-                        'duration': e.get('duration'),
-                        'duration_str': format_duration(e.get('duration')),
-                        'uploader': e.get('uploader') or e.get('channel', 'Desconocido'),
-                        'url': e.get('url') or e.get('webpage_url', '')
-                    })
-                return clean
+            clean = []
+            # 1. Intentar YouTube con clientes móviles
+            try:
+                with yt_dlp.YoutubeDL(FAST_SEARCH_OPTS) as ydl:
+                    res = ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
+                    entries = res.get('entries', []) if res else []
+                    for e in entries:
+                        if not e:
+                            continue
+                        vid_id = e.get('id')
+                        url = f"https://www.youtube.com/watch?v={vid_id}" if (vid_id and len(vid_id) == 11) else (e.get('url') or e.get('webpage_url', ''))
+                        clean.append({
+                            'title': e.get('title', 'Sin título'),
+                            'duration': e.get('duration'),
+                            'duration_str': format_duration(e.get('duration')),
+                            'uploader': e.get('uploader') or e.get('channel', 'Desconocido'),
+                            'url': url
+                        })
+            except Exception as e:
+                print(f"Error en búsqueda YouTube: {e}")
+
+            # 2. Si faltan resultados, complementar con SoundCloud
+            if len(clean) < limit:
+                try:
+                    sc_opts = dict(FAST_SEARCH_OPTS)
+                    sc_opts['default_search'] = 'scsearch'
+                    with yt_dlp.YoutubeDL(sc_opts) as sc_ydl:
+                        res = sc_ydl.extract_info(f"scsearch{limit}:{query}", download=False)
+                        entries = res.get('entries', []) if res else []
+                        for e in entries:
+                            if not e:
+                                continue
+                            t = e.get('title', 'Sin título')
+                            if not any(c['title'].lower() == t.lower() for c in clean):
+                                clean.append({
+                                    'title': f"[SC] {t}",
+                                    'duration': e.get('duration'),
+                                    'duration_str': format_duration(e.get('duration')),
+                                    'uploader': e.get('uploader') or 'SoundCloud',
+                                    'url': e.get('url') or e.get('webpage_url', '')
+                                })
+                            if len(clean) >= limit:
+                                break
+                except Exception as sc_err:
+                    print(f"Error en búsqueda SoundCloud: {sc_err}")
+
+            return clean[:limit]
+
         try:
             loop = asyncio.get_event_loop()
             return await loop.run_in_executor(None, _fetch)
