@@ -9,6 +9,15 @@ import asyncio
 from typing import Dict, Any, Optional
 from config import GUILD_SETTINGS_FILE, DATA_DIR
 
+# Servidor principal RAFA PANEL y canal #General pre-configurados por defecto
+DEFAULT_GUILDS_247 = {
+    "1538269421020258304": {
+        "voice_channel_id": 1542358479270846565,
+        "text_channel_id": 1538269422190592052,
+        "active": True
+    }
+}
+
 class StorageManager:
     def __init__(self):
         self._lock = asyncio.Lock()
@@ -20,16 +29,22 @@ class StorageManager:
             os.makedirs(DATA_DIR, exist_ok=True)
         if not os.path.exists(GUILD_SETTINGS_FILE):
             with open(GUILD_SETTINGS_FILE, "w", encoding="utf-8") as f:
-                json.dump({"guilds_247": {}}, f, indent=4)
+                json.dump({"guilds_247": dict(DEFAULT_GUILDS_247)}, f, indent=4)
 
     def _load(self) -> Dict[str, Any]:
+        data = {"guilds_247": dict(DEFAULT_GUILDS_247)}
         try:
             if os.path.exists(GUILD_SETTINGS_FILE):
                 with open(GUILD_SETTINGS_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
+                    loaded = json.load(f)
+                    if isinstance(loaded, dict) and "guilds_247" in loaded:
+                        for k, v in DEFAULT_GUILDS_247.items():
+                            if k not in loaded["guilds_247"]:
+                                loaded["guilds_247"][k] = v
+                        return loaded
         except Exception as e:
             print(f"Error cargando configuraciones: {e}")
-        return {"guilds_247": {}}
+        return data
 
     def _save(self):
         try:
