@@ -3,6 +3,7 @@ Cog General: /creditos, /invitar, /help y /ping
 Rafa Music Pro - Creado y Desarrollado por Rafa
 """
 
+import os
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -10,11 +11,35 @@ import time
 from config import COLOR_PRIMARY, COLOR_SUCCESS, BOT_NAME, BOT_VERSION, CREATOR_NAME, CREATOR_CREDITS, get_invite_url
 from utils.ui_components import InviteButtonView
 
+SERVER_INVITE_CHANNEL_ID = 1542056297367871499
+OFFICIAL_INVITE_URL = "https://discord.gg/s4uZ5Ju4Fv"
+
+class ServerInviteView(discord.ui.View):
+    def __init__(self, invite_url: str = OFFICIAL_INVITE_URL):
+        super().__init__(timeout=None)
+        self.add_item(discord.ui.Button(
+            label="Entrar a RAFA PANEL",
+            style=discord.ButtonStyle.link,
+            url=invite_url,
+            emoji="🚀"
+        ))
+
+    @discord.ui.button(label="Copiar Enlace", style=discord.ButtonStyle.primary, emoji="📋", custom_id="btn_copy_server_invite")
+    async def copy_link(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            f"🔗 **Enlace Oficial Permanente de RAFA PANEL:**\n>>> **{OFFICIAL_INVITE_URL}**\n\n¡Cópialo y compártelo donde gustes!",
+            ephemeral=True
+        )
+
 START_TIME = time.time()
 
 class General(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        self.bot.add_view(ServerInviteView())
 
     @app_commands.command(name="creditos", description="Muestra la información oficial y créditos de Rafa Music Pro")
     async def creditos_cmd(self, interaction: discord.Interaction):
@@ -163,6 +188,49 @@ class General(commands.Cog):
         )
         embed.set_footer(text=f"{BOT_NAME} • Creado por {CREATOR_NAME}")
         await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="link_servidor", description="Publica el panel con el enlace oficial permanente de invitación al servidor")
+    @app_commands.describe(canal="Canal donde se publicará el enlace (por defecto el canal de links)")
+    async def link_servidor_cmd(self, interaction: discord.Interaction, canal: discord.TextChannel = None):
+        target_channel = canal or self.bot.get_channel(SERVER_INVITE_CHANNEL_ID) or interaction.channel
+
+        invite_url = OFFICIAL_INVITE_URL
+        try:
+            inv = await target_channel.create_invite(max_age=0, max_uses=0, reason="Enlace permanente oficial")
+            invite_url = inv.url
+        except Exception:
+            pass
+
+        embed = discord.Embed(
+            title=f"🌐 ENLACE OFICIAL DE INVITACIÓN • {interaction.guild.name.upper()}",
+            description=(
+                f"✨ **¡Bienvenido/a a la comunidad oficial de {interaction.guild.name}!** ✨\n"
+                f"👑 **Creador & Desarrollador Oficial:** `{CREATOR_NAME}`\n\n"
+                f"📢 **¡Comparte nuestro servidor con todos tus amigos!**\n"
+                f"Usa este enlace oficial permanente para invitar personas, compartirlo en redes sociales o en otros grupos:\n\n"
+                f"🔗 **Enlace Oficial Permanente:**\n"
+                f">>> **{invite_url}**\n\n"
+                f"💎 **¿Qué encontrarás en nuestra comunidad?**\n"
+                f"• 🎵 **Música 24/7:** Bot de música ininterrumpido en canales de voz con ecualizadores DJ exclusivos.\n"
+                f"• 🛒 **Tienda Oficial:** Catálogo de Craker Tool, TP y Fantasma, ImGui personalizado y Proyectos completos.\n"
+                f"• 🎫 **Atención y Soporte Privado 24/7:** Sistema de tickets con respuesta rápida del creador.\n"
+                f"• 🛡️ **Comunidad Verificada y Segura:** Normas claras, sistema de bienvenida dinámico y ambiente gamer.\n\n"
+                f"👇 **¡Haz clic en el botón de abajo para unirte o copiar el enlace!**"
+            ),
+            color=0x00F0FF
+        )
+        file = None
+        if os.path.exists("assets/banner.png"):
+            file = discord.File("assets/banner.png", filename="banner.png")
+            embed.set_image(url="attachment://banner.png")
+        embed.set_footer(text=f"{BOT_NAME} • Servidor Oficial de {CREATOR_NAME}")
+
+        view = ServerInviteView(invite_url)
+        if file:
+            await target_channel.send(embed=embed, view=view, file=file)
+        else:
+            await target_channel.send(embed=embed, view=view)
+        await interaction.response.send_message(f"✅ ¡Enlace oficial publicado con éxito en {target_channel.mention}!", ephemeral=True)
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(General(bot))
