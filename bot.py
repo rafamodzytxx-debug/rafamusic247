@@ -60,12 +60,16 @@ class RafaMusicBot(commands.Bot):
         from cogs.channel_247 import setup as setup_247
         from cogs.radio import setup as setup_radio
         from cogs.welcomer import setup as setup_welcomer
+        from cogs.tickets import setup as setup_tickets
+        from cogs.rules import setup as setup_rules
 
         await setup_general(self)
         await setup_music(self, self.music_manager)
         await setup_247(self, self.music_manager)
         await setup_radio(self, self.music_manager)
         await setup_welcomer(self)
+        await setup_tickets(self)
+        await setup_rules(self)
 
         # Sincronizar en segundo plano para evitar bloqueos por rate limit de Discord
         async def sync_slash_tree():
