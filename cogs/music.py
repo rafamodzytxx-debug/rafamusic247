@@ -171,35 +171,73 @@ class Music(commands.Cog):
 
     @play_cmd.autocomplete("musica")
     async def play_autocomplete(self, interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
-        """Autocompletado interactivo mientras el usuario escribe en Discord."""
+        """Autocompletado interactivo con hasta 25 resultados (máximo de Discord)."""
         if not current.strip():
-            # Sugerencias populares de inicio
+            # 15 sugerencias populares de inicio
             defaults = [
                 ("🔥 Bad Bunny - Tití Me Preguntó", "Bad Bunny Tití Me Preguntó"),
                 ("🔥 The Weeknd - Blinding Lights", "The Weeknd Blinding Lights"),
                 ("🔥 Quevedo - Columbia", "Quevedo Columbia"),
-                ("🔥 Feid - Luna", "Feid Luna"),
-                ("🔥 Bizarrap & Shakira - Bzrp Music Sessions", "Bizarrap Shakira Sessions"),
+                ("🔥 Feid, ATL Jacob - LUNA", "Feid Luna"),
+                ("🔥 Bizarrap & Shakira - Bzrp Sessions", "Bizarrap Shakira Sessions"),
+                ("🔥 Rauw Alejandro - Todo de Ti", "Rauw Alejandro Todo de Ti"),
+                ("🔥 Peso Pluma - Ella Baila Sola", "Peso Pluma Ella Baila Sola"),
+                ("🔥 Karol G - Provenza", "Karol G Provenza"),
+                ("🔥 Travis Scott - FE!N", "Travis Scott FEIN"),
+                ("🔥 Drake - God's Plan", "Drake Gods Plan"),
+                ("🔥 Daddy Yankee - Gasolina", "Daddy Yankee Gasolina"),
+                ("🔥 Don Omar - Danza Kuduro", "Don Omar Danza Kuduro"),
             ]
             return [
                 app_commands.Choice(name=name, value=val)
-                for name, val in defaults
+                for name, val in defaults[:25]
             ]
 
         # Si el usuario ya pegó un enlace, no buscar
         if current.startswith("http://") or current.startswith("https://"):
             return [app_commands.Choice(name=f"🔗 Enlace directo: {current[:80]}", value=current)]
 
-        # Buscar en YouTube con yt-dlp ultrarrápido
+        # Buscar en YouTube con yt-dlp hasta 25 canciones (límite máximo permitido por Discord)
         results = await AutocompleteManager.search_suggestions(current)
         choices = []
-        for display_name, search_val in results[:10]:
+        for display_name, search_val in results[:25]:
             choices.append(app_commands.Choice(name=display_name[:100], value=search_val[:100]))
 
         if not choices:
             choices.append(app_commands.Choice(name=f"🔍 Buscar: '{current[:80]}'", value=current))
 
-        return choices
+        return choices[:25]
+
+    @app_commands.command(name="buscar", description="Busca un montón de canciones y elígela en un menú interactivo")
+    @app_commands.describe(musica="Nombre de la canción o artista a buscar")
+    async def buscar_cmd(self, interaction: discord.Interaction, musica: str):
+        """Busca hasta 15 canciones y las muestra en un menú desplegable interactivo."""
+        await interaction.response.defer(thinking=True)
+        if not await self._ensure_voice(interaction):
+            return
+
+        results = await AutocompleteManager.get_search_results(musica, limit=15)
+        if not results:
+            return await interaction.followup.send(f"❌ No se encontraron canciones para: `{musica}`")
+
+        player = self.music_manager.get_player(interaction.guild)
+        player.text_channel = interaction.channel
+
+        from utils.ui_components import SongSelectView
+
+        desc = ""
+        for i, s in enumerate(results, 1):
+            desc += f"`{i}.` **[{s['title'][:55]}]({s['url']})** (`{s['duration_str']}`)\n"
+
+        embed = discord.Embed(
+            title=f"🔎 Resultados de Búsqueda para: \"{musica}\"",
+            description=f"{desc}\n👇 **Selecciona la canción que quieres escuchar en el menú de abajo:**",
+            color=COLOR_PRIMARY
+        )
+        embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
+
+        view = SongSelectView(player, results, interaction.user)
+        await interaction.followup.send(embed=embed, view=view)
 
     @app_commands.command(name="skip", description="Salta la canción que está sonando actualmente")
     async def skip_cmd(self, interaction: discord.Interaction):

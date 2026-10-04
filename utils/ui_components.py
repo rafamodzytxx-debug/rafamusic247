@@ -155,3 +155,68 @@ class InviteButtonView(View):
             style=discord.ButtonStyle.link,
             emoji="🤖"
         ))
+
+
+class SongSelectView(View):
+    """Menú desplegable con muchas canciones para elegir en /buscar."""
+    def __init__(self, player: 'GuildPlayer', results: list, author: discord.Member):
+        super().__init__(timeout=90)
+        self.player = player
+        self.results = results
+        self.author = author
+
+        options = []
+        for i, item in enumerate(results[:25], 1):
+            title = item['title'][:70]
+            dur = item['duration_str']
+            label = f"{i}. {title}"
+            desc = f"⏱️ {dur} • {item['uploader'][:30]}"
+            options.append(discord.SelectOption(
+                label=label[:100],
+                description=desc[:100],
+                value=str(i - 1),
+                emoji="🎵"
+            ))
+
+        from discord.ui import Select
+        select = Select(
+            placeholder="🔽 Toca aquí para ver y elegir una canción...",
+            options=options,
+            custom_id="select_song"
+        )
+        select.callback = self.select_callback
+        self.add_item(select)
+
+    async def select_callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.author.id:
+            return await interaction.response.send_message("❌ Solo quien usó el comando puede elegir una canción.", ephemeral=True)
+
+        idx = int(interaction.data['values'][0])
+        chosen = self.results[idx]
+        await interaction.response.defer()
+
+        from utils.audio_player import Song
+        song = await Song.create_source(chosen['url'], interaction.user, loop=interaction.client.loop)
+
+        if self.player.is_playing or (self.player.voice_client and self.player.voice_client.is_playing()):
+            self.player.queue.append(song)
+            embed = discord.Embed(
+                title="📝 Agregado a la Cola de Reproducción",
+                description=f"### [{song.title}]({song.webpage_url})\n\n"
+                            f"⏱️ **Duración:** `{song.duration_str}`\n"
+                            f"👤 **Canal:** `{song.uploader}`\n"
+                            f"🔢 **Posición en cola:** `#{len(self.player.queue)}`\n"
+                            f"🙋 **Pedido por:** {interaction.user.mention}",
+                color=COLOR_PRIMARY
+            )
+            embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
+            await interaction.followup.send(embed=embed)
+        else:
+            self.player.queue.append(song)
+            await self.player.play_next()
+            embed = discord.Embed(
+                description=f"▶️ Reproduciendo ahora: **[{song.title}]({song.webpage_url})**",
+                color=COLOR_SUCCESS
+            )
+            embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
+            await interaction.followup.send(embed=embed)

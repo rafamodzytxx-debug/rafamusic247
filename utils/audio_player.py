@@ -168,7 +168,7 @@ class AutocompleteManager:
 
         def _fetch():
             with yt_dlp.YoutubeDL(fast_opts) as fast_ydl:
-                search_query = f"ytsearch5:{query}"
+                search_query = f"ytsearch25:{query}"
                 res = fast_ydl.extract_info(search_query, download=False)
                 entries = res.get('entries', []) if res else []
                 out = []
@@ -178,17 +178,49 @@ class AutocompleteManager:
                     title = e.get('title') or 'Sin título'
                     dur = format_duration(e.get('duration'))
                     # Limitar nombre para Discord (máximo 100 caracteres)
-                    display = f"🎵 {title[:80]} [{dur}]"
+                    display = f"🎵 {title[:78]} [{dur}]"
                     val = e.get('url') or e.get('webpage_url') or title
                     out.append((display, val))
-                return out
+                return out[:25]
 
         try:
             loop = asyncio.get_event_loop()
-            results = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=2.4)
+            results = await asyncio.wait_for(loop.run_in_executor(None, _fetch), timeout=2.5)
             _autocomplete_cache[query.lower()] = (now, results)
             return results
         except Exception:
+            return []
+
+    @staticmethod
+    async def get_search_results(query: str, limit: int = 15) -> List[Dict[str, Any]]:
+        """Retorna hasta 15 resultados completos para el menú interactivo /buscar."""
+        fast_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extract_flat': 'in_playlist',
+            'skip_download': True,
+        }
+        def _fetch():
+            with yt_dlp.YoutubeDL(fast_opts) as ydl:
+                res = ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
+                entries = res.get('entries', []) if res else []
+                clean = []
+                for e in entries:
+                    if not e:
+                        continue
+                    clean.append({
+                        'title': e.get('title', 'Sin título'),
+                        'duration': e.get('duration'),
+                        'duration_str': format_duration(e.get('duration')),
+                        'uploader': e.get('uploader') or e.get('channel', 'Desconocido'),
+                        'url': e.get('url') or e.get('webpage_url', '')
+                    })
+                return clean
+        try:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _fetch)
+        except Exception as e:
+            print(f"Error obteniendo lista de búsqueda: {e}")
             return []
 
 
