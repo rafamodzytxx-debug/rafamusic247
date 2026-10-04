@@ -88,21 +88,51 @@ class AIChat(commands.Cog):
                 await target.send(chunk)
 
     # ==========================================
-    # LISTENER AUTOMÁTICO EN EL CANAL DE IA
+    # LISTENER AUTOMÁTICO EN EL CANAL DE IA Y MENCIONES
     # ==========================================
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        # Ignorar mensajes de bots
+        # Ignorar mensajes de bots o fuera de servidores
         if message.author.bot or not message.guild:
             return
 
-        # Solo responder automáticamente en el canal asignado a la IA
-        if message.channel.id != AI_CHANNEL_ID:
+        is_ai_channel = (message.channel.id == AI_CHANNEL_ID)
+        is_mentioned = bool(self.bot.user and self.bot.user in message.mentions)
+
+        # Responder si es el canal de IA o si el usuario etiquetó al bot
+        if not is_ai_channel and not is_mentioned:
+            return
+
+        content = message.content.strip()
+
+        # Si el bot fue mencionado, limpiar la mención del texto para procesar la pregunta limpia
+        if is_mentioned and self.bot.user:
+            content = content.replace(f"<@{self.bot.user.id}>", "").replace(f"<@!{self.bot.user.id}>", "").strip()
+
+        # Si se escribió en el canal de IA pero content viene vacío (porque falta Message Content Intent)
+        if is_ai_channel and not content:
+            embed = discord.Embed(
+                title="⚠️ Discord requiere activar 'Message Content Intent'",
+                description=(
+                    "¡Hola! Para que pueda **leer tus mensajes automáticamente con solo escribir** (sin tener que etiquetarme con `@`):\n\n"
+                    "👉 **Activa el interruptor en 5 segundos:**\n"
+                    "1. Abre el enlace: [Discord Developer Portal](https://discord.com/developers/applications/1556114224449716264/bot)\n"
+                    "2. Baja a la sección **Privileged Gateway Intents**.\n"
+                    "3. Enciende los interruptores: **Message Content Intent** y **Server Members Intent**.\n"
+                    "4. Guarda los cambios (**Save Changes**).\n\n"
+                    "💡 *Mientras tanto, puedes hablarme mencionándome:* `@Rafa Music 24/7 tu pregunta` o usando `/ia [pregunta]`."
+                ),
+                color=COLOR_ERROR
+            )
+            embed.set_footer(text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}")
+            try:
+                await message.reply(embed=embed, mention_author=False)
+            except Exception:
+                pass
             return
 
         # Ignorar comandos con prefijo para no chocar
-        content = message.content.strip()
-        if not content or content.startswith("!") or content.startswith("/"):
+        if content.startswith("!") or content.startswith("/"):
             return
 
         async with message.channel.typing():
