@@ -38,6 +38,7 @@ def get_intents(enable_privileged: bool = True) -> discord.Intents:
     intents.guilds = True
     if enable_privileged:
         intents.message_content = True
+        intents.members = True
     return intents
 
 class RafaMusicBot(commands.Bot):
@@ -57,10 +58,14 @@ class RafaMusicBot(commands.Bot):
         from cogs.general import setup as setup_general
         from cogs.music import setup as setup_music
         from cogs.channel_247 import setup as setup_247
+        from cogs.radio import setup as setup_radio
+        from cogs.welcomer import setup as setup_welcomer
 
         await setup_general(self)
         await setup_music(self, self.music_manager)
         await setup_247(self, self.music_manager)
+        await setup_radio(self, self.music_manager)
+        await setup_welcomer(self)
 
         # Sincronizar en segundo plano para evitar bloqueos por rate limit de Discord
         async def sync_slash_tree():
