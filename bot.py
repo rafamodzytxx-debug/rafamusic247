@@ -78,7 +78,7 @@ class RafaMusicBot(commands.Bot):
         # Establecer presencia del bot
         activity = discord.Activity(
             type=discord.ActivityType.listening,
-            name="/play | Rafa Music Pro ⭐"
+            name="RafaModzYT King of c+++ 👑 | /play"
         )
         await self.change_presence(status=discord.Status.online, activity=activity)
 

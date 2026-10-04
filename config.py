@@ -16,13 +16,13 @@ CLIENT_ID = os.getenv("CLIENT_ID", "")
 # Información del Bot y Créditos
 BOT_NAME = "Rafa Music Pro"
 BOT_VERSION = "1.0.0 Pro Edition"
-CREATOR_NAME = "Rafa"
+CREATOR_NAME = "RafaModzYT King of c+++"
 BOT_DESCRIPTION = (
     "Bot de música de alta definición y fidelidad sonora con soporte 24/7 permanente, "
     "búsqueda en tiempo real con autocompletado y controles interactivos."
 )
 CREATOR_CREDITS = (
-    "👑 **Creador y Desarrollador Oficial:** Rafa\n"
+    "👑 **Creador y Desarrollador Oficial:** RafaModzYT King of c+++\n"
     "🚀 **Versión:** 1.0.0 Pro Edition\n"
     "⚡ **Motor:** Python + Discord.py + FFmpeg + yt-dlp\n"
     "🌐 **Disponible para cualquier servidor de Discord**"
