@@ -88,6 +88,13 @@ class RafaMusicBot(commands.Bot):
         async def sync_slash_tree():
             try:
                 print("🔄 Sincronizando comandos de barra diagonal (/)...")
+                # Sincronización instantánea para el servidor principal
+                guild_id = 1538269421020258304
+                guild_obj = discord.Object(id=guild_id)
+                self.tree.copy_global_to(guild=guild_obj)
+                synced_guild = await self.tree.sync(guild=guild_obj)
+                print(f"⚡ ¡{len(synced_guild)} comandos sincronizados al instante para RAFA PANEL!")
+                
                 synced = await self.tree.sync()
                 print(f"✅ ¡{len(synced)} comandos slash sincronizados con éxito globalmente!")
             except Exception as e:
