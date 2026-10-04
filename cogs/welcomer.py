@@ -80,14 +80,16 @@ class Welcomer(commands.Cog):
             embed = discord.Embed(
                 title=f"✨ ¡Bienvenido/a a {member.guild.name}! ✨",
                 description=(
-                    f"👋 ¡Hola {member.mention}! Te damos una cálida bienvenida a nuestro servidor.\n\n"
+                    f"👋 ¡Hola {member.mention}!\n\n"
+                    f"👤 **Usuario:** `{member.name}`\n"
                     f"👑 **Creador Oficial:** `{CREATOR_NAME}`\n"
-                    f"📜 Por favor revisa las reglas y los canales de información.\n"
+                    f"📜 Por favor revisa las reglas en <#1542056244993466389>.\n"
                     f"🎉 ¡Eres el miembro número **#{member.guild.member_count}**!\n\n"
                     f"✨ ¡Esperamos que disfrutes tu estancia al máximo!"
                 ),
                 color=COLOR_SUCCESS
             )
+            embed.set_thumbnail(url=member.display_avatar.url)
             embed.set_image(url="attachment://welcome.png")
             embed.set_footer(
                 text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}",
@@ -133,12 +135,14 @@ class Welcomer(commands.Cog):
             embed = discord.Embed(
                 title="👋 ¡Hasta Pronto! 👋",
                 description=(
-                    f"**{member.name}** ha dejado el servidor.\n"
+                    f"👤 **Usuario:** `{member.name}` ({member.mention})\n\n"
+                    f"Ha dejado la comunidad de **{member.guild.name}**.\n"
                     f"Le deseamos lo mejor y esperamos volver a verlo pronto.\n\n"
-                    f"👥 Ahora quedamos **{member.guild.member_count} miembros** en la comunidad."
+                    f"👥 Ahora quedamos **{member.guild.member_count} miembros** en el servidor."
                 ),
                 color=COLOR_ERROR
             )
+            embed.set_thumbnail(url=member.display_avatar.url)
             embed.set_image(url="attachment://goodbye.png")
             embed.set_footer(
                 text=f"{BOT_NAME} • Desarrollado por {CREATOR_NAME}",
