@@ -87,16 +87,15 @@ class RafaMusicBot(commands.Bot):
         # Sincronizar en segundo plano para evitar bloqueos por rate limit de Discord
         async def sync_slash_tree():
             try:
-                print("🔄 Sincronizando comandos de barra diagonal (/)...")
-                # Sincronización instantánea para el servidor principal
+                print("🔄 Limpiando comandos duplicados y sincronizando...")
                 guild_id = 1538269421020258304
                 guild_obj = discord.Object(id=guild_id)
-                self.tree.copy_global_to(guild=guild_obj)
-                synced_guild = await self.tree.sync(guild=guild_obj)
-                print(f"⚡ ¡{len(synced_guild)} comandos sincronizados al instante para RAFA PANEL!")
+                self.tree.clear_commands(guild=guild_obj)
+                await self.tree.sync(guild=guild_obj)
+                print("🧹 Comandos del servidor limpiados para evitar duplicados.")
                 
                 synced = await self.tree.sync()
-                print(f"✅ ¡{len(synced)} comandos slash sincronizados con éxito globalmente!")
+                print(f"✅ ¡{len(synced)} comandos globales únicos sincronizados con éxito!")
             except Exception as e:
                 print(f"⚠️ Nota de sincronización: {e}")
 
